@@ -1,0 +1,21 @@
+{
+  "content_filter": {
+    "enabled": true,
+    "blacklist_keywords": [
+      "禁止",
+      "不允許",
+      "限制"
+    ],
+    "allowed_agencies": [
+      "交通部臺灣鐵路管理局"
+    ],
+    "content_limits": {
+      "min_length": 50,
+      "max_length": 1000
+    }
+  },
+  "preview": {
+    "enabled": false,
+    "auto_approve_safe_content": true
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "content_filter": {
+    "enabled": true,
+    "blacklist_keywords": [
+      "密碼",
+      "password",
+      "secret",
+      "token",
+      "key",
+      "個人資料",
+      "身分證",
+      "電話",
+      "地址",
+      "機密",
+      "內部",
+      "私人"
+    ],
+    "allowed_agencies": [
+      "交通部臺灣鐵路管理局",
+      "國營臺灣鐵路股份有限公司",
+      "臺北市政府",
+      "新北市政府",
+      "桃園市政府",
+      "臺中市政府",
+      "臺南市政府",
+      "高雄市政府",
+      "交通部",
+      "經濟部",
+      "內政部",
+      "教育部",
+      "衛生福利部"
+    ],
+    "content_limits": {
+      "min_length": 10,
+      "max_length": 10000
+    }
+  },
+  "preview": {
+    "enabled": true,
+    "auto_approve_safe_content": false,
+    "show_content_preview_length": 200
+  },
+  "processing": {
+    "force_update": false,
+    "batch_size": 10,
+    "max_retries": 3
+  },
+  "logging": {
+    "level": "INFO",
+    "show_stats": true,
+    "detailed_errors": true
+  }
+}

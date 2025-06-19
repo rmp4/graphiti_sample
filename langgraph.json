@@ -1,0 +1,9 @@
+{
+  "dependencies": ["./"],
+  "graphs": {
+    "tender_search": "./src/langgraph_integration/workflow/tender_search_graph.py:tender_search_graph"
+  },
+  "env": ".env",
+  "dockerfile": "./Dockerfile",
+  "python_path": ["./src"]
+}

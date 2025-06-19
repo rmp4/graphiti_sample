@@ -1,6 +1,0 @@
-graphiti-core
-beautifulsoup4
-aiohttp
-lxml
-html2text
-pydantic
