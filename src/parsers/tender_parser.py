@@ -7,6 +7,7 @@
 from bs4 import BeautifulSoup
 from typing import Dict, Any, Optional
 import logging
+from src.exceptions import ParsingError, TenderDataError
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +29,16 @@ class TenderParser:
         data = {}
 
         try:
-            # 輸出部分 HTML 內容以供調試
-            logger.info(f"抓取的 HTML 內容前 500 字元:\n{soup.prettify()[:500]}")
+            # 驗證輸入
+            if not html or not html.strip():
+                raise TenderDataError("提供的 HTML 內容為空")
+            
+            # 檢查 HTML 是否有效
+            if not soup or not soup.get_text(strip=True):
+                raise ParsingError("無法解析 HTML 內容或內容為空")
+
+            # 安全地記錄部分 HTML 內容（避免記錄敏感資料）
+            logger.debug(f"開始解析 HTML 內容，長度: {len(html)} 字元")
 
             # 嘗試用更通用的方式抓取招標案名稱
             title_tag = soup.find("td", id="tenderNameText")
@@ -72,8 +81,17 @@ class TenderParser:
             else:
                 data["open_date"] = None
 
+            # 驗證至少解析到一些關鍵資料
+            if not any([data.get("tender_name"), data.get("agency"), data.get("budget")]):
+                logger.warning("未解析到任何關鍵招標資訊，可能是 HTML 結構已變更")
+            
             logger.info(f"成功解析招標資料: {data.get('tender_name', '未知招標案')}")
+            
+        except (TenderDataError, ParsingError):
+            # 重新拋出已知的自訂異常
+            raise
         except Exception as e:
-            logger.error(f"解析招標資料時發生錯誤: {e}")
+            logger.error(f"解析招標資料時發生未預期錯誤: {type(e).__name__}: {e}")
+            raise ParsingError(f"HTML 解析失敗: {e}") from e
 
         return data

@@ -7,13 +7,20 @@
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 import re
+import json
+from datetime import datetime
 
-class Episode(BaseModel):
-    title: str
-    content: str
+# 使用 Graphiti 原生格式
+from graphiti_core.nodes import EpisodeType
+
+# 導入統一的實體定義
+from src.entities.tender_entities import (
+    TenderCaseEntity, OrganizationEntity, AmountEntity, 
+    DateEntity, CategoryEntity, ContractorEntity, TechnologyEntity
+)
 
 class EntityData(BaseModel):
-    """實體資料結構"""
+    """實體資料結構 - 保留向後兼容性"""
     entity_type: str
     name: str
     properties: Dict[str, Any]
@@ -30,57 +37,87 @@ def extract_amount_value(amount_text: Optional[str]) -> Optional[float]:
     except ValueError:
         return None
 
-def convert_tender_data_to_episodes(tender_data: Dict[str, Any]) -> List[Episode]:
+def create_graphiti_episode(tender_data: Dict[str, Any]) -> Dict[str, Any]:
     """
-    將結構化招標資料轉換為多個 Episodes，使用自定義實體類型
-
+    建立符合 Graphiti 格式的 JSON episode
+    
     Args:
         tender_data (Dict[str, Any]): 解析後的招標資料字典
-
+    
     Returns:
-        List[Episode]: 轉換後的 Episode 列表
+        Dict[str, Any]: Graphiti episode 配置
+    """
+    tender_name = tender_data.get('tender_name', '未知招標案')
+    
+    # 結構化 episode 內容
+    episode_content = {
+        'tender_info': {
+            'name': tender_data.get('tender_name'),
+            'agency': tender_data.get('agency'),
+            'case_number': tender_data.get('case_number'),
+            'tender_method': tender_data.get('tender_method'),
+            'decision_method': tender_data.get('decision_method'),
+            'procurement_type': tender_data.get('procurement_type'),
+            'tender_stage': tender_data.get('tender_stage'),
+            'performance_location': tender_data.get('performance_location'),
+            'performance_period': tender_data.get('performance_period')
+        },
+        'dates': {
+            'announcement_date': tender_data.get('announcement_date'),
+            'bid_deadline': tender_data.get('bid_deadline'),
+            'bid_opening_time': tender_data.get('bid_opening_time'),
+            'contract_period': tender_data.get('contract_period')
+        },
+        'amounts': {
+            'budget': tender_data.get('budget'),
+            'estimated_amount': tender_data.get('estimated_amount'),
+            'award_amount': tender_data.get('award_amount'),
+            'document_fee': tender_data.get('document_fee'),
+            'system_usage_fee': tender_data.get('system_usage_fee')
+        },
+        'agency_info': tender_data.get('agency_info', {}),
+        'category_info': tender_data.get('category_info', {}),
+        'contractor': tender_data.get('contractor'),
+        'description': tender_data.get('description'),
+        'requirement': tender_data.get('requirement'),
+        'scope': tender_data.get('scope')
+    }
+    
+    # 移除空值以保持資料乾淨
+    def clean_dict(d):
+        if isinstance(d, dict):
+            return {k: clean_dict(v) for k, v in d.items() if v is not None and v != {} and v != []}
+        elif isinstance(d, list):
+            return [clean_dict(item) for item in d if item is not None]
+        else:
+            return d
+    
+    episode_content = clean_dict(episode_content)
+    
+    return {
+        'name': f"tender_{tender_name}",
+        'episode_body': episode_content,
+        'source': EpisodeType.json,
+        'source_description': f"政府採購案 - {tender_data.get('agency', '未知機關')}",
+        'reference_time': datetime.now()
+    }
+
+def convert_tender_data_to_episodes(tender_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    將結構化招標資料轉換為 Graphiti Episodes
+    
+    Args:
+        tender_data (Dict[str, Any]): 解析後的招標資料字典
+    
+    Returns:
+        List[Dict[str, Any]]: 轉換後的 Graphiti Episode 列表
     """
     episodes = []
-
-    # 主要招標案描述（簡化的 content）
-    tender_name = tender_data.get('tender_name', '未知招標案')
-    main_content = f"這是關於「{tender_name}」的政府採購案件。"
     
-    # 如果有額外的描述性資訊，可以加入
-    if tender_data.get('description'):
-        main_content += f"\n描述：{tender_data.get('description')}"
-
-    episodes.append(Episode(
-        title=f"招標案_{tender_name}",
-        content=main_content,
-    ))
-
-    # 建立實體關聯資訊 Episode
-    entities_info = []
+    # 建立主要的招標案 episode
+    main_episode = create_graphiti_episode(tender_data)
+    episodes.append(main_episode)
     
-    # 招標機關實體
-    if tender_data.get('agency'):
-        entities_info.append(f"招標機關：{tender_data.get('agency')}")
-    
-    # 預算金額實體
-    if tender_data.get('budget'):
-        entities_info.append(f"預算金額：{tender_data.get('budget')}")
-    
-    # 開標時間實體
-    if tender_data.get('open_date'):
-        entities_info.append(f"開標時間：{tender_data.get('open_date')}")
-    
-    # 決標金額實體（如果有）
-    if tender_data.get('award_amount'):
-        entities_info.append(f"決標金額：{tender_data.get('award_amount')}")
-
-    if entities_info:
-        entities_content = "此招標案涉及以下相關實體：\n" + "\n".join(entities_info)
-        episodes.append(Episode(
-            title=f"招標實體關聯_{tender_name}",
-            content=entities_content,
-        ))
-
     return episodes
 
 def extract_technology_keywords(text: str) -> List[str]:
@@ -344,6 +381,40 @@ def create_tender_entities(tender_data: Dict[str, Any]) -> List[EntityData]:
     
     return entities
 
+async def add_tender_episode_to_graphiti(graphiti_client, tender_data: Dict[str, Any]):
+    """
+    將招標 episode 添加到 Graphiti 使用正確的格式
+    
+    Args:
+        graphiti_client: Graphiti 客戶端實例
+        tender_data (Dict[str, Any]): 解析後的招標資料字典
+    """
+    episode_config = create_graphiti_episode(tender_data)
+    
+    await graphiti_client.add_episode(
+        name=episode_config['name'],
+        episode_body=episode_config['episode_body'],
+        source=episode_config['source'],
+        source_description=episode_config['source_description'],
+        reference_time=episode_config['reference_time']
+    )
+
+async def add_multiple_tender_episodes(graphiti_client, tender_data_list: List[Dict[str, Any]]):
+    """
+    批量添加多個招標 episodes
+    
+    Args:
+        graphiti_client: Graphiti 客戶端實例
+        tender_data_list (List[Dict[str, Any]]): 招標資料列表
+    """
+    episodes = []
+    for tender_data in tender_data_list:
+        episode_config = create_graphiti_episode(tender_data)
+        episodes.append(episode_config)
+    
+    # 使用批量操作提高效能
+    await graphiti_client.add_episode_bulk(episodes)
+
 def create_enhanced_fact_triples_entities(tender_data: Dict[str, Any]) -> List[EntityData]:
     """
     使用增強的實體創建邏輯，專門為 Fact Triples 方法準備
@@ -367,3 +438,56 @@ def create_enhanced_fact_triples_entities(tender_data: Dict[str, Any]) -> List[E
         entity.properties = cleaned_properties
     
     return entities
+
+def to_json_string(episode_config: Dict[str, Any]) -> str:
+    """
+    將 Graphiti episode 配置轉換為 JSON 字串
+    
+    Args:
+        episode_config (Dict[str, Any]): Graphiti episode 配置
+    
+    Returns:
+        str: JSON 字串
+    """
+    # 轉換非 JSON 可序列化的物件
+    json_ready_config = episode_config.copy()
+    
+    # 處理 datetime 物件
+    if 'reference_time' in json_ready_config:
+        json_ready_config['reference_time'] = json_ready_config['reference_time'].isoformat()
+    
+    # 處理 EpisodeType 物件
+    if 'source' in json_ready_config:
+        if hasattr(json_ready_config['source'], 'value'):
+            json_ready_config['source'] = json_ready_config['source'].value
+        else:
+            json_ready_config['source'] = str(json_ready_config['source'])
+    
+    return json.dumps(json_ready_config, ensure_ascii=False, indent=2)
+
+# 示範使用方法
+def example_usage():
+    """
+    示範如何使用新的 Graphiti 格式
+    """
+    # 範例招標資料
+    sample_tender_data = {
+        'tender_name': '台灣電力公司大數據平台建置案',
+        'agency': '台灣電力公司',
+        'budget': 'NT$5,000,000',
+        'case_number': 'TPC-2024-001',
+        'announcement_date': '113/01/15',
+        'bid_deadline': '113/02/15 17:00'
+    }
+    
+    # 建立 Graphiti episode
+    episode_config = create_graphiti_episode(sample_tender_data)
+    
+    # 轉換為 JSON 字串
+    json_string = to_json_string(episode_config)
+    print(json_string)
+    
+    # 如果有 Graphiti 客戶端，可以這樣使用：
+    # await add_tender_episode_to_graphiti(graphiti_client, sample_tender_data)
+    
+    return episode_config
